@@ -65,7 +65,7 @@ cd "c:\proyectos\Parcial Arle"
   -RepoUrl "https://github.com/TU_USUARIO/TU_REPO.git"
 ```
 
-- **`-ResourceGroupName`**: debe ser único en tu suscripción (puedes usar tu apellido + fecha).
+- **`-ResourceGroupName`**: debe ser único en tu suscripción (puedes usar tu apellido + fecha). Si el grupo **ya existe** de un intento anterior, el script **no** intenta recrearlo en otra región (Azure no lo permite): solo sigue con la VM.
 - **`-RepoUrl`**: HTTPS del repo **público** (termina en `.git` o sin `.git`, ambas suelen valer con `git clone`).
 
 Por defecto el script usa **`-Location westeurope`** y **`-VmSize Standard_B2s`**, y **reintenta solo** con otras combinaciones (regiones y tamaños) si Azure responde **SkuNotAvailable** (restricción de capacidad). Puedes desactivar los reintentos con **`-NoAutoRetryVm`**.

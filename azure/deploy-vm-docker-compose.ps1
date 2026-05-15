@@ -63,10 +63,17 @@ if ($LASTEXITCODE -ne 0) {
     Stop-Deploy "Ejecuta primero: az login"
 }
 
-Write-Host "Creando o actualizando grupo de recursos '$ResourceGroupName' (ubicación metadatos: $Location)..." -ForegroundColor Cyan
-az group create --name $ResourceGroupName --location $Location | Out-Null
-if ($LASTEXITCODE -ne 0) {
-    Stop-Deploy "No se pudo crear el grupo de recursos."
+$rgJson = az group show --name $ResourceGroupName -o json 2>$null
+if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($rgJson)) {
+    $rgObj = $rgJson | ConvertFrom-Json
+    Write-Host "El grupo '$ResourceGroupName' ya existe (región metadatos de Azure: $($rgObj.location)). No se vuelve a ejecutar 'az group create'." -ForegroundColor Yellow
+    Write-Host "(La VM puede crearse en otra región con --location; eso no tiene por qué coincidir con la del grupo.)" -ForegroundColor DarkGray
+} else {
+    Write-Host "Creando grupo de recursos '$ResourceGroupName' en $Location..." -ForegroundColor Cyan
+    az group create --name $ResourceGroupName --location $Location | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        Stop-Deploy "No se pudo crear el grupo de recursos."
+    }
 }
 
 # Orden: tu elección primero; luego SKUs que suelen tener stock (SkuNotAvailable / capacity).
