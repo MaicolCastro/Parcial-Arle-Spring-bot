@@ -1,0 +1,8 @@
+**/target/
+**/node_modules/
+**/.idea/
+**/.vscode/
+*.iml
+.env
+.env.*
+!.env.example

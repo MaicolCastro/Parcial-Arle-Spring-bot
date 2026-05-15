@@ -1,0 +1,39 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: api-gateway
+  cloud:
+    gateway:
+      globalcors:
+        add-to-simple-url-handler-mapping: true
+        cors-configurations:
+          '[/**]':
+            allowed-origin-patterns: ${CORS_ALLOWED_ORIGIN_PATTERNS:http://localhost,http://127.0.0.1,http://localhost:5173,http://127.0.0.1:5173,http://localhost:80,http://127.0.0.1:80}
+            allowed-methods: "*"
+            allowed-headers: "*"
+            allow-credentials: true
+      routes:
+        - id: ms-auth
+          uri: http://${MS_AUTH_HOST:ms-auth}:${MS_AUTH_PORT:8081}
+          predicates:
+            - Path=/api/auth/**
+        - id: ms-citas
+          uri: http://${MS_CITAS_HOST:ms-citas}:${MS_CITAS_PORT:8082}
+          predicates:
+            - Path=/api/citas/**
+        - id: ms-servicios
+          uri: http://${MS_SERVICIOS_HOST:ms-servicios}:${MS_SERVICIOS_PORT:8083}
+          predicates:
+            - Path=/api/servicios/**
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,gateway
+  endpoint:
+    health:
+      probes:
+        enabled: true

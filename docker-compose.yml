@@ -1,0 +1,112 @@
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: peluqueria-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./docker/mysql-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p${MYSQL_ROOT_PASSWORD:-root}"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  postgres-citas:
+    image: postgres:16-alpine
+    container_name: peluqueria-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: citas_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  ms-auth:
+    build:
+      context: .
+      dockerfile: backend/ms-auth/Dockerfile
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_DATABASE: auth_db
+      MYSQL_USER: root
+      MYSQL_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+      JWT_SECRET_BASE64: ${JWT_SECRET_BASE64:-MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDE=}
+    depends_on:
+      mysql:
+        condition: service_healthy
+    expose:
+      - "8081"
+
+  ms-citas:
+    build:
+      context: .
+      dockerfile: backend/ms-citas/Dockerfile
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      POSTGRES_HOST: postgres-citas
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: citas_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      JWT_SECRET_BASE64: ${JWT_SECRET_BASE64:-MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDE=}
+    depends_on:
+      postgres-citas:
+        condition: service_healthy
+    expose:
+      - "8082"
+
+  ms-servicios:
+    build:
+      context: .
+      dockerfile: backend/ms-servicios/Dockerfile
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+      JWT_SECRET_BASE64: ${JWT_SECRET_BASE64:-MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDE=}
+    depends_on:
+      mysql:
+        condition: service_healthy
+    expose:
+      - "8083"
+
+  api-gateway:
+    build:
+      context: .
+      dockerfile: backend/api-gateway/Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      MS_AUTH_HOST: ms-auth
+      MS_CITAS_HOST: ms-citas
+      MS_SERVICIOS_HOST: ms-servicios
+      CORS_ALLOWED_ORIGIN_PATTERNS: ${CORS_ALLOWED_ORIGIN_PATTERNS:-http://localhost:5173,http://127.0.0.1:5173,http://localhost:80,http://localhost}
+    depends_on:
+      - ms-auth
+      - ms-citas
+      - ms-servicios
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    ports:
+      - "80:80"
+    depends_on:
+      - api-gateway
+
+volumes:
+  mysql_data:
+  postgres_data:
