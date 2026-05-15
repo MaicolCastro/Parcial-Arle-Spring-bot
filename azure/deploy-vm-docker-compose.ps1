@@ -12,9 +12,9 @@
 param(
     [Parameter(Mandatory = $true)][string]$ResourceGroupName,
     [Parameter(Mandatory = $true)][string]$RepoUrl,
-    [string]$Location = "westeurope",
+    [string]$Location = "uksouth",
     [string]$VmName = "vm-peluqueria",
-    [string]$VmSize = "Standard_B2s",
+    [string]$VmSize = "Standard_D2s_v5",
     [string]$SshPublicKeyPath = "$env:USERPROFILE\.ssh\id_rsa.pub",
     [string]$JwtSecretBase64 = "MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDE=",
     [switch]$NoAutoRetryVm
@@ -76,35 +76,40 @@ if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($rgJson)) {
     }
 }
 
-# Orden: tu elección primero; luego SKUs que suelen tener stock (SkuNotAvailable / capacity).
+# Plan de VM: tu -Location / -VmSize primero; luego serie D (pool distinto a B pequeñas); otras regiones.
+# B1s/B1ms suelen devolver SkuNotAvailable — no se reintentan.
 $vmPlan = [System.Collections.ArrayList]@()
-[void]$vmPlan.Add(@{ L = $Location; S = $VmSize })
+$seen = @{}
+function Add-VmAttempt([string]$Loc, [string]$Size) {
+    $key = "$Loc|$Size"
+    if ($seen.ContainsKey($key)) {
+        return
+    }
+    $seen[$key] = $true
+    [void]$script:vmPlan.Add(@{ L = $Loc; S = $Size })
+}
+
+Add-VmAttempt $Location $VmSize
 if (-not $NoAutoRetryVm) {
-    foreach ($s in @('Standard_D2s_v5', 'Standard_DS1_v2', 'Standard_B2ms', 'Standard_B1ms', 'Standard_B1s')) {
+    foreach ($s in @('Standard_D2s_v5', 'Standard_DS1_v2', 'Standard_D4s_v5', 'Standard_B2ms', 'Standard_B2s')) {
         if ($s -ne $VmSize) {
-            [void]$vmPlan.Add(@{ L = $Location; S = $s })
+            Add-VmAttempt $Location $s
         }
     }
-    foreach ($loc in @('westeurope', 'southcentralus', 'northeurope', 'francecentral', 'uksouth', 'eastus2', 'eastus')) {
+    foreach ($loc in @('uksouth', 'westeurope', 'southcentralus', 'northeurope', 'francecentral', 'swedencentral', 'brazilsouth', 'eastus2', 'eastus')) {
         if ($loc -eq $Location) {
             continue
         }
-        foreach ($s in @('Standard_D2s_v5', 'Standard_B2s', 'Standard_DS1_v2', 'Standard_B2ms')) {
-            [void]$vmPlan.Add(@{ L = $loc; S = $s })
+        foreach ($s in @('Standard_D2s_v5', 'Standard_DS1_v2', 'Standard_B2s', 'Standard_B2ms')) {
+            Add-VmAttempt $loc $s
         }
     }
 }
 
-$seen = @{}
 $vmOk = $false
 $usedLoc = $Location
 $usedSize = $VmSize
 foreach ($row in $vmPlan) {
-    $key = "$($row.L)|$($row.S)"
-    if ($seen.ContainsKey($key)) {
-        continue
-    }
-    $seen[$key] = $true
     Write-Host "Creando VM '$VmName' → región $($row.L), tamaño $($row.S) (3-10 min)..." -ForegroundColor Cyan
     az vm create `
         --resource-group $ResourceGroupName `

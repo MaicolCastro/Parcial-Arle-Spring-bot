@@ -90,9 +90,9 @@ cd "c:\proyectos\Parcial Arle"
 
 1. Comprueba **Azure CLI** y sesión `az login`.
 2. Comprueba o **crea** la clave SSH `id_rsa.pub` si falta.
-3. Si el **grupo de recursos no existe**, lo crea (región por defecto del parámetro `-Location`, hoy **westeurope**).  
+3. Si el **grupo de recursos no existe**, lo crea (región por defecto del parámetro `-Location`, hoy **uksouth**).  
    Si el grupo **ya existe** (por un intento anterior en otra región, p. ej. `eastus2`), **no** lo vuelve a crear: Azure no permite cambiar la región de un grupo ya creado.
-4. Crea la **VM Ubuntu** con Docker: prueba tu `-Location` / `-VmSize` y, si Azure devuelve **SkuNotAvailable**, **reintenta solo** otras regiones y tamaños hasta que una funcione (salvo que uses `-NoAutoRetryVm`).
+4. Crea la **VM Ubuntu** con Docker: prueba tu `-Location` / `-VmSize` y, si Azure devuelve **SkuNotAvailable**, **reintenta solo** con otras regiones y tamaños (prioriza serie **D**; no reintenta **B1s**). Usa `-NoAutoRetryVm` para un solo intento.
 5. Abre el **puerto 80**.
 6. En la VM: instala Docker, hace `git clone` del repo, `docker compose up -d --build` (la **primera vez puede tardar 15–45 minutos**).
 
@@ -102,8 +102,8 @@ cd "c:\proyectos\Parcial Arle"
 
 | Parámetro | Uso |
 |-----------|-----|
-| `-Location "westeurope"` | Región del grupo **nuevo** y primer intento de VM (por defecto ya es westeurope). |
-| `-VmSize "Standard_B2s"` | Tamaño de VM del primer intento (por defecto Standard_B2s). |
+| `-Location "uksouth"` | Región del grupo **nuevo** y primer intento de VM (por defecto **uksouth**, suele tener mejor disponibilidad). |
+| `-VmSize "Standard_D2s_v5"` | Tamaño del primer intento (por defecto **Standard_D2s_v5**; otra familia de capacidad que las B pequeñas). |
 | `-SshPublicKeyPath "C:\Users\TU NOMBRE\.ssh\id_rsa.pub"` | Si tu ruta tiene espacios. |
 | `-NoAutoRetryVm` | Un solo intento de VM (sin bucle de SKUs/regiones). |
 
@@ -114,7 +114,7 @@ Si **todo** falla por capacidad: otro **`-ResourceGroupName`** nuevo y otra `-Lo
   -ResourceGroupName "rg-peluqueria-nuevo" `
   -RepoUrl "https://github.com/MaicolCastro/Parcial-Arle-Spring-bot.git" `
   -Location "brazilsouth" `
-  -VmSize "Standard_B2s"
+  -VmSize "Standard_D2s_v5"
 ```
 
 Más información: [SKU not available](https://aka.ms/azureskunotavailable).

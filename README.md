@@ -84,7 +84,7 @@ cd "c:\proyectos\Parcial Arle"
   -RepoUrl "https://github.com/TU_USUARIO/TU_REPO.git"
 ```
 
-Por defecto: región **`westeurope`**, VM **`Standard_B2s`**, y **reintentos automáticos** con otras SKUs/regiones si Azure devuelve **SkuNotAvailable**. Para solo una prueba: **`-NoAutoRetryVm`**. Más detalle en `azure/PASO-A-PASO-AZURE.md`.
+Por defecto: región **`uksouth`**, VM **`Standard_D2s_v5`**, y **reintentos automáticos** (prioriza serie **D**; no reintenta B1s). Para solo una prueba: **`-NoAutoRetryVm`**. Más detalle en `azure/PASO-A-PASO-AZURE.md`.
 
 Requisitos: Azure CLI, `az login`, clave SSH (el script puede crearla si falta), repo **público** en GitHub. La primera construcción en la VM puede tardar **15–45 min**; la VM usa **swap** para ayudar al `docker build`.
 
