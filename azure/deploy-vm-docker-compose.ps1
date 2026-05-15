@@ -4,6 +4,7 @@
 # Uso:
 #   az login
 #   .\azure\deploy-vm-docker-compose.ps1 -ResourceGroupName "rg-peluqueria" -RepoUrl "https://github.com/TU_USUARIO/TU_REPO.git"
+# Si no tienes clave SSH, el script intentará crear id_rsa / id_rsa.pub (sin frase de paso).
 
 param(
     [Parameter(Mandatory = $true)][string]$ResourceGroupName,
@@ -23,17 +24,29 @@ if (-not (Get-Command az -ErrorAction SilentlyContinue)) {
 }
 
 if (-not (Test-Path $SshPublicKeyPath)) {
-    Write-Error @"
-No se encontró la clave pública SSH en:
-  $SshPublicKeyPath
-
-Crea la clave (en otra ventana de PowerShell) y vuelve a ejecutar el script:
-  ssh-keygen -t rsa -b 4096
-(Acepta la ruta por defecto; deja la frase de paso vacía si quieres.)
-
-Si tu usuario de Windows tiene espacios en la ruta, pasa el parámetro entre comillas:
-  -SshPublicKeyPath "$env:USERPROFILE\.ssh\id_rsa.pub"
-"@
+    $sshDir = Join-Path $env:USERPROFILE '.ssh'
+    $privKeyPath = Join-Path $sshDir 'id_rsa'
+    if (Test-Path $privKeyPath) {
+        Write-Host "Existe la clave privada pero no la pública:" -ForegroundColor Red
+        Write-Host "  $privKeyPath" -ForegroundColor Red
+        Write-Host "Genera la pública con:" -ForegroundColor Yellow
+        Write-Host "  ssh-keygen -y -f `"$privKeyPath`" | Out-File -Encoding ascii `"$SshPublicKeyPath`"" -ForegroundColor Gray
+        exit 1
+    }
+    if (-not (Get-Command ssh-keygen -ErrorAction SilentlyContinue)) {
+        Write-Host "No está instalado OpenSSH (comando ssh-keygen)." -ForegroundColor Red
+        Write-Host "Actívalo en: Configuración > Aplicaciones > Características opcionales > OpenSSH Cliente." -ForegroundColor Yellow
+        exit 1
+    }
+    Write-Host "No se encontró la clave pública. Se creará una nueva en:" -ForegroundColor Yellow
+    Write-Host "  $SshPublicKeyPath" -ForegroundColor Gray
+    New-Item -ItemType Directory -Force -Path $sshDir | Out-Null
+    & ssh-keygen @('-t', 'rsa', '-b', '4096', '-f', $privKeyPath, '-q', '-N', '')
+    if (-not (Test-Path $SshPublicKeyPath)) {
+        Write-Host "ssh-keygen no creó el archivo esperado. Ejecuta a mano: ssh-keygen -t rsa -b 4096" -ForegroundColor Red
+        exit 1
+    }
+    Write-Host "Clave SSH creada correctamente." -ForegroundColor Green
 }
 $pub = Get-Content -Raw $SshPublicKeyPath
 
