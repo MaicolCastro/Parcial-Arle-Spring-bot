@@ -68,23 +68,17 @@ cd "c:\proyectos\Parcial Arle"
 - **`-ResourceGroupName`**: debe ser único en tu suscripción (puedes usar tu apellido + fecha).
 - **`-RepoUrl`**: HTTPS del repo **público** (termina en `.git` o sin `.git`, ambas suelen valer con `git clone`).
 
-Por defecto el script usa **`-Location eastus2`** y **`-VmSize Standard_B1s`** (suele haber capacidad en Azure). Si aparece **SkuNotAvailable** (“capacity restrictions”), ejecuta de nuevo con **otro grupo**, **otra región** y/o **otro tamaño**:
+Por defecto el script usa **`-Location westeurope`** y **`-VmSize Standard_B2s`**, y **reintenta solo** con otras combinaciones (regiones y tamaños) si Azure responde **SkuNotAvailable** (restricción de capacidad). Puedes desactivar los reintentos con **`-NoAutoRetryVm`**.
+
+Si aun así falla todo (poco habitual), prueba otro **nombre de grupo** y otra región a mano, por ejemplo:
 
 ```powershell
 .\azure\deploy-vm-docker-compose.ps1 `
-  -ResourceGroupName "rg-peluqueria-arle2" `
+  -ResourceGroupName "rg-peluqueria-arle3" `
   -RepoUrl "https://github.com/TU_USUARIO/TU_REPO.git" `
-  -Location "westeurope" `
-  -VmSize "Standard_B2s"
-```
-
-Más RAM/CPU para que `docker build` sea más rápido (algo más caro):
-
-```powershell
-.\azure\deploy-vm-docker-compose.ps1 `
-  -ResourceGroupName "rg-peluqueria-arle" `
-  -RepoUrl "https://github.com/TU_USUARIO/TU_REPO.git" `
-  -VmSize "Standard_D2s_v5"
+  -Location "brazilsouth" `
+  -VmSize "Standard_B2s" `
+  -NoAutoRetryVm
 ```
 
 Documentación Microsoft: [SKU not available](https://aka.ms/azureskunotavailable).

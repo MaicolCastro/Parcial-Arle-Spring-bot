@@ -6,18 +6,18 @@
 #   .\azure\deploy-vm-docker-compose.ps1 -ResourceGroupName "rg-peluqueria" -RepoUrl "https://github.com/TU_USUARIO/TU_REPO.git"
 # Si no tienes clave SSH, el script intentará crear id_rsa / id_rsa.pub (sin frase de paso).
 #
-# Si falla por "SkuNotAvailable", prueba otra región o tamaño, por ejemplo:
-#   -Location eastus2 -VmSize Standard_B1s
-#   -Location westeurope -VmSize Standard_B2s
+# Si Azure devuelve SkuNotAvailable, el script reintenta otras regiones/tamaños automáticamente.
+# Para desactivar: -NoAutoRetryVm
 
 param(
     [Parameter(Mandatory = $true)][string]$ResourceGroupName,
     [Parameter(Mandatory = $true)][string]$RepoUrl,
-    [string]$Location = "eastus2",
+    [string]$Location = "westeurope",
     [string]$VmName = "vm-peluqueria",
-    [string]$VmSize = "Standard_B1s",
+    [string]$VmSize = "Standard_B2s",
     [string]$SshPublicKeyPath = "$env:USERPROFILE\.ssh\id_rsa.pub",
-    [string]$JwtSecretBase64 = "MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDE="
+    [string]$JwtSecretBase64 = "MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDE=",
+    [switch]$NoAutoRetryVm
 )
 
 $ErrorActionPreference = "Stop"
@@ -63,33 +63,72 @@ if ($LASTEXITCODE -ne 0) {
     Stop-Deploy "Ejecuta primero: az login"
 }
 
-Write-Host "Creando grupo de recursos '$ResourceGroupName' en $Location..." -ForegroundColor Cyan
+Write-Host "Creando o actualizando grupo de recursos '$ResourceGroupName' (ubicación metadatos: $Location)..." -ForegroundColor Cyan
 az group create --name $ResourceGroupName --location $Location | Out-Null
 if ($LASTEXITCODE -ne 0) {
     Stop-Deploy "No se pudo crear el grupo de recursos."
 }
 
-Write-Host "Creando VM '$VmName' tamaño $VmSize (3-10 min)..." -ForegroundColor Cyan
-az vm create `
-    --resource-group $ResourceGroupName `
-    --name $VmName `
-    --image Ubuntu2204 `
-    --size $VmSize `
-    --admin-username azureuser `
-    --authentication-type ssh `
-    --ssh-key-values $pub `
-    --public-ip-sku Standard `
-    --output none
+# Orden: tu elección primero; luego SKUs que suelen tener stock (SkuNotAvailable / capacity).
+$vmPlan = [System.Collections.ArrayList]@()
+[void]$vmPlan.Add(@{ L = $Location; S = $VmSize })
+if (-not $NoAutoRetryVm) {
+    foreach ($s in @('Standard_D2s_v5', 'Standard_DS1_v2', 'Standard_B2ms', 'Standard_B1ms', 'Standard_B1s')) {
+        if ($s -ne $VmSize) {
+            [void]$vmPlan.Add(@{ L = $Location; S = $s })
+        }
+    }
+    foreach ($loc in @('westeurope', 'southcentralus', 'northeurope', 'francecentral', 'uksouth', 'eastus2', 'eastus')) {
+        if ($loc -eq $Location) {
+            continue
+        }
+        foreach ($s in @('Standard_D2s_v5', 'Standard_B2s', 'Standard_DS1_v2', 'Standard_B2ms')) {
+            [void]$vmPlan.Add(@{ L = $loc; S = $s })
+        }
+    }
+}
 
-if ($LASTEXITCODE -ne 0) {
+$seen = @{}
+$vmOk = $false
+$usedLoc = $Location
+$usedSize = $VmSize
+foreach ($row in $vmPlan) {
+    $key = "$($row.L)|$($row.S)"
+    if ($seen.ContainsKey($key)) {
+        continue
+    }
+    $seen[$key] = $true
+    Write-Host "Creando VM '$VmName' → región $($row.L), tamaño $($row.S) (3-10 min)..." -ForegroundColor Cyan
+    az vm create `
+        --resource-group $ResourceGroupName `
+        --name $VmName `
+        --location $row.L `
+        --image Ubuntu2204 `
+        --size $row.S `
+        --admin-username azureuser `
+        --authentication-type ssh `
+        --ssh-key-values $pub `
+        --public-ip-sku Standard `
+        --output none
+    if ($LASTEXITCODE -eq 0) {
+        $vmOk = $true
+        $usedLoc = $row.L
+        $usedSize = $row.S
+        Write-Host "VM creada correctamente en $($row.L) con $($row.S)." -ForegroundColor Green
+        break
+    }
+    Write-Host "Falló esta combinación (sigue reintentando si hay más)..." -ForegroundColor DarkYellow
+}
+
+if (-not $vmOk) {
     Write-Host ""
-    Write-Host "La creación de la VM falló (a veces Azure responde SkuNotAvailable por falta de capacidad en esa región/tamaño)." -ForegroundColor Yellow
-    Write-Host "Prueba de nuevo con otra región y/o tamaño, por ejemplo:" -ForegroundColor Yellow
-    Write-Host '  .\azure\deploy-vm-docker-compose.ps1 -ResourceGroupName "rg-pelu-2" -RepoUrl "' + $RepoUrl + '" -Location eastus2 -VmSize Standard_B1s' -ForegroundColor Gray
-    Write-Host '  .\azure\deploy-vm-docker-compose.ps1 -ResourceGroupName "rg-pelu-2" -RepoUrl "' + $RepoUrl + '" -Location westeurope -VmSize Standard_B2s' -ForegroundColor Gray
-    Write-Host '  .\azure\deploy-vm-docker-compose.ps1 -ResourceGroupName "rg-pelu-2" -RepoUrl "' + $RepoUrl + '" -Location southcentralus -VmSize Standard_D2s_v5' -ForegroundColor Gray
+    Write-Host "No hubo capacidad para ninguna combinación probada (SkuNotAvailable). Prueba manualmente otra región/SKU." -ForegroundColor Yellow
+    Write-Host "Ejemplos (copia una línea completa):" -ForegroundColor Yellow
+    Write-Host ('  .\azure\deploy-vm-docker-compose.ps1 -ResourceGroupName "rg-pelu-3" -RepoUrl "{0}" -Location westeurope -VmSize Standard_D2s_v5' -f $RepoUrl)
+    Write-Host ('  .\azure\deploy-vm-docker-compose.ps1 -ResourceGroupName "rg-pelu-3" -RepoUrl "{0}" -Location southcentralus -VmSize Standard_B2s' -f $RepoUrl)
+    Write-Host ('  .\azure\deploy-vm-docker-compose.ps1 -ResourceGroupName "rg-pelu-3" -RepoUrl "{0}" -NoAutoRetryVm -Location brazilsouth -VmSize Standard_B2s' -f $RepoUrl)
     Write-Host ""
-    Write-Host "Más info: https://aka.ms/azureskunotavailable" -ForegroundColor DarkGray
+    Write-Host "https://aka.ms/azureskunotavailable" -ForegroundColor DarkGray
     exit 1
 }
 
