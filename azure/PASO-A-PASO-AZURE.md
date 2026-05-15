@@ -1,190 +1,200 @@
-# Paso a paso: desplegar en Azure por consola (rápido y estable)
+# Paso a paso: desplegar en Azure por consola (Windows + PowerShell)
 
-Este proyecto se despliega en **una máquina virtual Ubuntu** con **Docker Compose**: frontend (puerto 80), gateway (8080 interno), microservicios y bases de datos. Todo queda operativo en **una sola URL** (`http://IP`).
+Al terminar tendrás **una URL** (`http://IP_PUBLICA`): ahí está el **frontend** y la **API** (Nginx en la VM envía `/api` al gateway). No necesitas abrir el puerto 8080 al público.
 
----
-
-## 0. Qué necesitas antes de empezar
-
-1. **Cuenta de Azure** con suscripción activa.
-2. **Azure CLI** instalado en Windows: [Instalar Azure CLI](https://learn.microsoft.com/es-es/cli/azure/install-azure-cli-windows).
-3. **PowerShell** (el que trae Windows).
-4. **Clave SSH** (la VM no usa contraseña, solo SSH):
-   - Si no tienes clave, en PowerShell (acepta la ruta por defecto; puedes dejar la *passphrase* vacía):
-     ```powershell
-     ssh-keygen -t rsa -b 4096
-     ```
-   - Debe existir el archivo `id_rsa.pub` (ruta típica: `C:\Users\TU_NOMBRE\.ssh\id_rsa.pub`). Si tu usuario tiene **espacios** en la ruta, al ejecutar el script de despliegue usa comillas: `-SshPublicKeyPath "C:\Users\TU NOMBRE\.ssh\id_rsa.pub"`.
-5. **Código en GitHub en un repositorio público** (rama por defecto `main` o la que tengas como default en GitHub). La VM hará `git clone` de esa URL.
+**Archivo del script:** `azure/deploy-vm-docker-compose.ps1`  
+**Tu repo de ejemplo:** `https://github.com/MaicolCastro/Parcial-Arle-Spring-bot.git`
 
 ---
 
-## 1. Subir el proyecto a GitHub (solo la primera vez)
+## Paso 1 — Comprobar requisitos en tu PC
 
-1. Crea un repositorio **público** en GitHub (vacío o con README).
-2. En la carpeta del proyecto en tu PC:
-
-   ```powershell
-   cd "c:\proyectos\Parcial Arle"
-   git init
-   git add .
-   git commit -m "Proyecto peluquería microservicios"
-   git branch -M main
-   git remote add origin https://github.com/TU_USUARIO/TU_REPO.git
-   git push -u origin main
-   ```
-
-3. Comprueba en el navegador que la URL del repo abre y ves `docker-compose.yml` en la raíz.
+| Requisito | Qué hacer |
+|-----------|-----------|
+| Cuenta Azure | Suscripción activa (estudiante o normal). |
+| Azure CLI | [Instalar Azure CLI (Windows)](https://learn.microsoft.com/es-es/cli/azure/install-azure-cli-windows). |
+| PowerShell | Abre **Windows PowerShell** o **Terminal**. |
+| Repo en GitHub | Debe ser **público** y tener el código en la rama por defecto (`main`). Debe verse `docker-compose.yml` en la raíz al abrir el repo en el navegador. |
+| Clave SSH | Debe existir `C:\Users\TU_USUARIO\.ssh\id_rsa.pub`. Si **no** existe, el script intentará crearla solo la primera vez. Si prefieres crearla tú: `ssh-keygen -t rsa -b 4096` (Enter a la ruta por defecto; passphrase vacía si quieres). |
 
 ---
 
-## 2. Iniciar sesión en Azure
+## Paso 2 — Tener el proyecto en GitHub (solo la primera vez)
+
+Si el código **ya está** en GitHub, pasa al **Paso 3**.
+
+Si no:
+
+1. Crea un repositorio **público** en GitHub.
+2. En tu PC, en la carpeta del proyecto:
+
+```powershell
+cd "c:\proyectos\Parcial Arle"
+git init
+git add .
+git commit -m "Proyecto peluqueria"
+git branch -M main
+git remote add origin https://github.com/TU_USUARIO/TU_REPO.git
+git push -u origin main
+```
+
+---
+
+## Paso 3 — Iniciar sesión en Azure
 
 ```powershell
 az login
 ```
 
-Elige la suscripción correcta (si tienes varias):
+Si tienes **varias suscripciones**:
 
 ```powershell
 az account list -o table
 az account set --subscription "NOMBRE-O-ID-DE-TU-SUSCRIPCION"
 ```
 
+Comprueba que hay sesión:
+
+```powershell
+az account show -o table
+```
+
 ---
 
-## 3. Ejecutar el script de despliegue
+## Paso 4 — Actualizar el script en tu PC (recomendado)
 
-Desde la carpeta del proyecto (ajusta **nombre del grupo**, **URL del repo**):
+Si ya clonaste o trabajas en la carpeta del proyecto:
+
+```powershell
+cd "c:\proyectos\Parcial Arle"
+git pull
+```
+
+Así tienes la última versión de `deploy-vm-docker-compose.ps1` (reintentos de VM, grupo de recursos ya existente, etc.).
+
+---
+
+## Paso 5 — Ejecutar el despliegue (un comando)
+
+Elige un **nombre de grupo de recursos** (único en tu suscripción). Ejemplo: `rg-peluqueria-arle`.
 
 ```powershell
 cd "c:\proyectos\Parcial Arle"
 
 .\azure\deploy-vm-docker-compose.ps1 `
   -ResourceGroupName "rg-peluqueria-arle" `
-  -RepoUrl "https://github.com/TU_USUARIO/TU_REPO.git"
+  -RepoUrl "https://github.com/MaicolCastro/Parcial-Arle-Spring-bot.git"
 ```
 
-- **`-ResourceGroupName`**: debe ser único en tu suscripción (puedes usar tu apellido + fecha). Si el grupo **ya existe** de un intento anterior, el script **no** intenta recrearlo en otra región (Azure no lo permite): solo sigue con la VM.
-- **`-RepoUrl`**: HTTPS del repo **público** (termina en `.git` o sin `.git`, ambas suelen valer con `git clone`).
+**Qué hace el script (en orden):**
 
-Por defecto el script usa **`-Location westeurope`** y **`-VmSize Standard_B2s`**, y **reintenta solo** con otras combinaciones (regiones y tamaños) si Azure responde **SkuNotAvailable** (restricción de capacidad). Puedes desactivar los reintentos con **`-NoAutoRetryVm`**.
+1. Comprueba **Azure CLI** y sesión `az login`.
+2. Comprueba o **crea** la clave SSH `id_rsa.pub` si falta.
+3. Si el **grupo de recursos no existe**, lo crea (región por defecto del parámetro `-Location`, hoy **westeurope**).  
+   Si el grupo **ya existe** (por un intento anterior en otra región, p. ej. `eastus2`), **no** lo vuelve a crear: Azure no permite cambiar la región de un grupo ya creado.
+4. Crea la **VM Ubuntu** con Docker: prueba tu `-Location` / `-VmSize` y, si Azure devuelve **SkuNotAvailable**, **reintenta solo** otras regiones y tamaños hasta que una funcione (salvo que uses `-NoAutoRetryVm`).
+5. Abre el **puerto 80**.
+6. En la VM: instala Docker, hace `git clone` del repo, `docker compose up -d --build` (la **primera vez puede tardar 15–45 minutos**).
 
-Si aun así falla todo (poco habitual), prueba otro **nombre de grupo** y otra región a mano, por ejemplo:
+**No cierres la ventana** hasta que termine el bloque largo del comando remoto.
+
+**Parámetros opcionales útiles:**
+
+| Parámetro | Uso |
+|-----------|-----|
+| `-Location "westeurope"` | Región del grupo **nuevo** y primer intento de VM (por defecto ya es westeurope). |
+| `-VmSize "Standard_B2s"` | Tamaño de VM del primer intento (por defecto Standard_B2s). |
+| `-SshPublicKeyPath "C:\Users\TU NOMBRE\.ssh\id_rsa.pub"` | Si tu ruta tiene espacios. |
+| `-NoAutoRetryVm` | Un solo intento de VM (sin bucle de SKUs/regiones). |
+
+Si **todo** falla por capacidad: otro **`-ResourceGroupName`** nuevo y otra `-Location`, por ejemplo:
 
 ```powershell
 .\azure\deploy-vm-docker-compose.ps1 `
-  -ResourceGroupName "rg-peluqueria-arle3" `
-  -RepoUrl "https://github.com/TU_USUARIO/TU_REPO.git" `
+  -ResourceGroupName "rg-peluqueria-nuevo" `
+  -RepoUrl "https://github.com/MaicolCastro/Parcial-Arle-Spring-bot.git" `
   -Location "brazilsouth" `
-  -VmSize "Standard_B2s" `
-  -NoAutoRetryVm
+  -VmSize "Standard_B2s"
 ```
 
-Documentación Microsoft: [SKU not available](https://aka.ms/azureskunotavailable).
-
-El script:
-
-1. Crea el **grupo de recursos**.
-2. Crea la **VM Ubuntu** con tu clave `id_rsa.pub`.
-3. Abre el **puerto 80** (HTTP).
-4. En la VM instala **Docker**, clona el repo, crea `.env` y ejecuta **`docker compose up -d --build`** (puede tardar **15–45 minutos** la primera vez por Maven dentro de los Dockerfiles).
-
-**No cierres PowerShell** hasta que termine el paso del comando remoto (puede tardar mucho; si tu versión de Azure CLI corta el tiempo, conecta por SSH y ejecuta `sudo bash /tmp/bootstrap.sh`).
+Más información: [SKU not available](https://aka.ms/azureskunotavailable).
 
 ---
 
-## 4. Cuando termine: probar
+## Paso 6 — Probar en el navegador
 
-Al final el script muestra una línea como:
+Al finalizar, el script imprime una línea del estilo:
 
 `Frontend + API ... http://XX.XX.XX.XX`
 
-1. Abre en el navegador: **`http://ESA_IP`** → debe cargar el **login** del frontend.
-2. Entra con:
+1. Abre **`http://ESA_IP`** (solo `http`, sin puerto extra: el 80 es el web).
+2. **Login demo** (si la base de usuarios arrancó vacía):
    - **Email:** `admin@peluqueria.demo`
    - **Contraseña:** `Admin123`
-3. Prueba **Citas** y **Servicios** (como ADMIN puedes CRUD en servicios).
+3. Revisa **Citas** y **Servicios**.
 
-La API va por el mismo sitio: el Nginx del frontend enruta **`/api`** al **gateway**; no hace falta abrir el 8080 al público para la entrega.
+La API es la misma URL con rutas **`/api/...`** (el Nginx del frontend hace de proxy al gateway).
 
 ---
 
-## 5. Si algo falla (sin pánico)
+## Paso 7 — Si algo falla (SSH y logs)
 
-### Ver estado de los contenedores (por SSH)
+Sustituye `TU_IP` por la IP pública que te dio el script o la ves en Azure Portal.
 
 ```powershell
-ssh azureuser@TU_IP_PUBLICA
+ssh azureuser@TU_IP
+```
+
+Dentro de la VM:
+
+```bash
 sudo docker compose -f /opt/peluqueria-app/docker-compose.yml ps
-sudo docker compose -f /opt/peluqueria-app/docker-compose.yml logs --tail=80 api-gateway
+sudo tail -200 /var/log/peluqueria-bootstrap.log
 ```
 
-Salir de SSH: `exit`.
-
-### Ver el log del instalador en la VM
+Reintentar solo Docker (si la VM ya existe y Docker está bien):
 
 ```powershell
-ssh azureuser@TU_IP_PUBLICA "sudo tail -200 /var/log/peluqueria-bootstrap.log"
+ssh azureuser@TU_IP "cd /opt/peluqueria-app && sudo docker compose up -d --build"
 ```
 
-### Repetir solo el compose en la VM (si Docker ya está bien)
+Si el comando remoto de Azure se cortó pero la VM existe:
 
 ```powershell
-ssh azureuser@TU_IP_PUBLICA "cd /opt/peluqueria-app && sudo docker compose up -d --build"
+ssh azureuser@TU_IP "sudo bash /tmp/bootstrap.sh"
 ```
-
-### El comando remoto se cortó por tiempo
-
-Vuelve a conectar y lanza el bootstrap a mano:
-
-```powershell
-ssh azureuser@TU_IP_PUBLICA "sudo bash /tmp/bootstrap.sh"
-```
-
-(Si `/tmp/bootstrap.sh` no existe, vuelve a ejecutar el script `deploy-vm-docker-compose.ps1` en otra VM nueva o clona y `docker compose` manual en `/opt/peluqueria-app`.)
-
-### Error “Repository not found” al clonar
-
-- Repo **privado**: el script solo funciona con repo **público**, o tendrías que configurar un token en la VM (no cubierto aquí).
-- URL mal copiada: revisa `https://github.com/USUARIO/REPO.git`.
-
-### No carga la web en el puerto 80
-
-```powershell
-az vm open-port --resource-group rg-peluqueria-arle --name vm-peluqueria --port 80
-```
-
-(Sustituye grupo y nombre de VM por los tuyos.)
 
 ---
 
-## 6. Qué poner en Moodle
+## Paso 8 — Entrega en Moodle (ejemplo)
 
-| Campo | Valor típico |
-|--------|----------------|
-| GitHub | `https://github.com/TU_USUARIO/TU_REPO` |
-| Frontend | `http://TU_IP_PUBLICA` |
-| Backend / API | Mismo que el frontend (todo va por `/api`), o si el profesor pide URL explícita del gateway: `http://TU_IP_PUBLICA/api` como prefijo de rutas (el gateway no tiene página en `/`, solo JSON en `/` y rutas `/api/...`). |
+| Campo | Qué poner |
+|--------|-----------|
+| GitHub | `https://github.com/MaicolCastro/Parcial-Arle-Spring-bot` |
+| URL frontend | `http://TU_IP_PUBLICA` |
+| URL backend | Misma base: la API va en `http://TU_IP_PUBLICA/api/...` (ej. login: `POST http://TU_IP_PUBLICA/api/auth/login`). |
 
 ---
 
-## 7. Borrar todo (dejar de pagar la VM)
+## Paso 9 — Borrar todo y dejar de pagar (cuando ya no lo necesites)
 
 ```powershell
 az group delete --name rg-peluqueria-arle --yes --no-wait
 ```
 
-(Sustituye el nombre del grupo por el que usaste.)
+(Cambia `rg-peluqueria-arle` por el nombre de grupo que hayas usado.)
 
 ---
 
-## Resumen de una línea (después de GitHub listo)
+## Copiar y pegar (resumen mínimo)
 
 ```powershell
 az login
 cd "c:\proyectos\Parcial Arle"
-.\azure\deploy-vm-docker-compose.ps1 -ResourceGroupName "rg-peluqueria-arle" -RepoUrl "https://github.com/TU_USUARIO/TU_REPO.git"
+git pull
+.\azure\deploy-vm-docker-compose.ps1 `
+  -ResourceGroupName "rg-peluqueria-arle" `
+  -RepoUrl "https://github.com/MaicolCastro/Parcial-Arle-Spring-bot.git"
 ```
 
-Espera a que termine → abre `http://IP` → login demo → listo.
+Espera a que termine → abre `http://IP` → `admin@peluqueria.demo` / `Admin123` → listo.
