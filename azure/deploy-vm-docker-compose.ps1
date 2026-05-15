@@ -23,7 +23,17 @@ if (-not (Get-Command az -ErrorAction SilentlyContinue)) {
 }
 
 if (-not (Test-Path $SshPublicKeyPath)) {
-    Write-Error "No se encontró la clave SSH en $SshPublicKeyPath. Genera una con: ssh-keygen -t rsa -b 4096 -N \"\" -f `"$env:USERPROFILE\.ssh\id_rsa`""
+    Write-Error @"
+No se encontró la clave pública SSH en:
+  $SshPublicKeyPath
+
+Crea la clave (en otra ventana de PowerShell) y vuelve a ejecutar el script:
+  ssh-keygen -t rsa -b 4096
+(Acepta la ruta por defecto; deja la frase de paso vacía si quieres.)
+
+Si tu usuario de Windows tiene espacios en la ruta, pasa el parámetro entre comillas:
+  -SshPublicKeyPath "$env:USERPROFILE\.ssh\id_rsa.pub"
+"@
 }
 $pub = Get-Content -Raw $SshPublicKeyPath
 

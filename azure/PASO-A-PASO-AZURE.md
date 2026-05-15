@@ -10,10 +10,11 @@ Este proyecto se despliega en **una máquina virtual Ubuntu** con **Docker Compo
 2. **Azure CLI** instalado en Windows: [Instalar Azure CLI](https://learn.microsoft.com/es-es/cli/azure/install-azure-cli-windows).
 3. **PowerShell** (el que trae Windows).
 4. **Clave SSH** (la VM no usa contraseña, solo SSH):
-   - Si no tienes clave, en PowerShell:
+   - Si no tienes clave, en PowerShell (acepta la ruta por defecto; puedes dejar la *passphrase* vacía):
      ```powershell
-     ssh-keygen -t rsa -b 4096 -N '""' -f "$env:USERPROFILE\.ssh\id_rsa"
+     ssh-keygen -t rsa -b 4096
      ```
+   - Debe existir el archivo `id_rsa.pub` (ruta típica: `C:\Users\TU_NOMBRE\.ssh\id_rsa.pub`). Si tu usuario tiene **espacios** en la ruta, al ejecutar el script de despliegue usa comillas: `-SshPublicKeyPath "C:\Users\TU NOMBRE\.ssh\id_rsa.pub"`.
 5. **Código en GitHub en un repositorio público** (rama por defecto `main` o la que tengas como default en GitHub). La VM hará `git clone` de esa URL.
 
 ---
