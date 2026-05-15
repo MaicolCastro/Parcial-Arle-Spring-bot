@@ -84,7 +84,9 @@ cd "c:\proyectos\Parcial Arle"
   -RepoUrl "https://github.com/TU_USUARIO/TU_REPO.git"
 ```
 
-Requisitos: Azure CLI, `az login`, clave SSH en `%USERPROFILE%\.ssh\id_rsa.pub`, repo **público** en GitHub. La primera construcción en la VM puede tardar **15–45 min**; el script usa timeout de **1 h** y **swap** en la VM para reducir fallos al compilar.
+Por defecto: región **`eastus2`**, VM **`Standard_B1s`**. Si Azure indica **SkuNotAvailable**, vuelve a ejecutar con **`-Location`** y **`-VmSize`** distintos (ver `azure/PASO-A-PASO-AZURE.md`).
+
+Requisitos: Azure CLI, `az login`, clave SSH (el script puede crearla si falta), repo **público** en GitHub. La primera construcción en la VM puede tardar **15–45 min**; la VM usa **swap** para ayudar al `docker build`.
 
 Al terminar abre **http://TU_IP** (frontend + `/api` vía Nginx al gateway).
 

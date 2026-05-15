@@ -68,14 +68,26 @@ cd "c:\proyectos\Parcial Arle"
 - **`-ResourceGroupName`**: debe ser único en tu suscripción (puedes usar tu apellido + fecha).
 - **`-RepoUrl`**: HTTPS del repo **público** (termina en `.git` o sin `.git`, ambas suelen valer con `git clone`).
 
-Opcional (más RAM al compilar, menos riesgo de error):
+Por defecto el script usa **`-Location eastus2`** y **`-VmSize Standard_B1s`** (suele haber capacidad en Azure). Si aparece **SkuNotAvailable** (“capacity restrictions”), ejecuta de nuevo con **otro grupo**, **otra región** y/o **otro tamaño**:
+
+```powershell
+.\azure\deploy-vm-docker-compose.ps1 `
+  -ResourceGroupName "rg-peluqueria-arle2" `
+  -RepoUrl "https://github.com/TU_USUARIO/TU_REPO.git" `
+  -Location "westeurope" `
+  -VmSize "Standard_B2s"
+```
+
+Más RAM/CPU para que `docker build` sea más rápido (algo más caro):
 
 ```powershell
 .\azure\deploy-vm-docker-compose.ps1 `
   -ResourceGroupName "rg-peluqueria-arle" `
   -RepoUrl "https://github.com/TU_USUARIO/TU_REPO.git" `
-  -VmSize "Standard_B4ms"
+  -VmSize "Standard_D2s_v5"
 ```
+
+Documentación Microsoft: [SKU not available](https://aka.ms/azureskunotavailable).
 
 El script:
 
@@ -84,7 +96,7 @@ El script:
 3. Abre el **puerto 80** (HTTP).
 4. En la VM instala **Docker**, clona el repo, crea `.env` y ejecuta **`docker compose up -d --build`** (puede tardar **15–45 minutos** la primera vez por Maven dentro de los Dockerfiles).
 
-**No cierres PowerShell** hasta que termine (timeout por defecto **1 hora**).
+**No cierres PowerShell** hasta que termine el paso del comando remoto (puede tardar mucho; si tu versión de Azure CLI corta el tiempo, conecta por SSH y ejecuta `sudo bash /tmp/bootstrap.sh`).
 
 ---
 

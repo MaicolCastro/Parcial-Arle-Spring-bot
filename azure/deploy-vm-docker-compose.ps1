@@ -5,22 +5,30 @@
 #   az login
 #   .\azure\deploy-vm-docker-compose.ps1 -ResourceGroupName "rg-peluqueria" -RepoUrl "https://github.com/TU_USUARIO/TU_REPO.git"
 # Si no tienes clave SSH, el script intentará crear id_rsa / id_rsa.pub (sin frase de paso).
+#
+# Si falla por "SkuNotAvailable", prueba otra región o tamaño, por ejemplo:
+#   -Location eastus2 -VmSize Standard_B1s
+#   -Location westeurope -VmSize Standard_B2s
 
 param(
     [Parameter(Mandatory = $true)][string]$ResourceGroupName,
     [Parameter(Mandatory = $true)][string]$RepoUrl,
-    [string]$Location = "eastus",
+    [string]$Location = "eastus2",
     [string]$VmName = "vm-peluqueria",
-    [string]$VmSize = "Standard_B2s",
+    [string]$VmSize = "Standard_B1s",
     [string]$SshPublicKeyPath = "$env:USERPROFILE\.ssh\id_rsa.pub",
-    [string]$JwtSecretBase64 = "MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDE=",
-    [int]$RunCommandTimeoutSeconds = 3600
+    [string]$JwtSecretBase64 = "MDEyMzQ1Njc4OTAxMjM0NTY3ODkwMTIzNDU2Nzg5MDE="
 )
 
 $ErrorActionPreference = "Stop"
 
+function Stop-Deploy([string]$Message, [int]$Code = 1) {
+    Write-Host $Message -ForegroundColor Red
+    exit $Code
+}
+
 if (-not (Get-Command az -ErrorAction SilentlyContinue)) {
-    Write-Error "Instala Azure CLI: https://aka.ms/installazurecliwindows"
+    Stop-Deploy "Instala Azure CLI: https://aka.ms/installazurecliwindows"
 }
 
 if (-not (Test-Path $SshPublicKeyPath)) {
@@ -43,8 +51,7 @@ if (-not (Test-Path $SshPublicKeyPath)) {
     New-Item -ItemType Directory -Force -Path $sshDir | Out-Null
     & ssh-keygen @('-t', 'rsa', '-b', '4096', '-f', $privKeyPath, '-q', '-N', '')
     if (-not (Test-Path $SshPublicKeyPath)) {
-        Write-Host "ssh-keygen no creó el archivo esperado. Ejecuta a mano: ssh-keygen -t rsa -b 4096" -ForegroundColor Red
-        exit 1
+        Stop-Deploy "ssh-keygen no creó el archivo esperado. Ejecuta a mano: ssh-keygen -t rsa -b 4096"
     }
     Write-Host "Clave SSH creada correctamente." -ForegroundColor Green
 }
@@ -53,12 +60,16 @@ $pub = Get-Content -Raw $SshPublicKeyPath
 Write-Host "Comprobando sesión en Azure..." -ForegroundColor Cyan
 az account show *> $null
 if ($LASTEXITCODE -ne 0) {
-    Write-Error "Ejecuta primero: az login"
+    Stop-Deploy "Ejecuta primero: az login"
 }
 
+Write-Host "Creando grupo de recursos '$ResourceGroupName' en $Location..." -ForegroundColor Cyan
 az group create --name $ResourceGroupName --location $Location | Out-Null
+if ($LASTEXITCODE -ne 0) {
+    Stop-Deploy "No se pudo crear el grupo de recursos."
+}
 
-Write-Host "Creando VM (3-8 min)..." -ForegroundColor Cyan
+Write-Host "Creando VM '$VmName' tamaño $VmSize (3-10 min)..." -ForegroundColor Cyan
 az vm create `
     --resource-group $ResourceGroupName `
     --name $VmName `
@@ -70,8 +81,23 @@ az vm create `
     --public-ip-sku Standard `
     --output none
 
+if ($LASTEXITCODE -ne 0) {
+    Write-Host ""
+    Write-Host "La creación de la VM falló (a veces Azure responde SkuNotAvailable por falta de capacidad en esa región/tamaño)." -ForegroundColor Yellow
+    Write-Host "Prueba de nuevo con otra región y/o tamaño, por ejemplo:" -ForegroundColor Yellow
+    Write-Host '  .\azure\deploy-vm-docker-compose.ps1 -ResourceGroupName "rg-pelu-2" -RepoUrl "' + $RepoUrl + '" -Location eastus2 -VmSize Standard_B1s' -ForegroundColor Gray
+    Write-Host '  .\azure\deploy-vm-docker-compose.ps1 -ResourceGroupName "rg-pelu-2" -RepoUrl "' + $RepoUrl + '" -Location westeurope -VmSize Standard_B2s' -ForegroundColor Gray
+    Write-Host '  .\azure\deploy-vm-docker-compose.ps1 -ResourceGroupName "rg-pelu-2" -RepoUrl "' + $RepoUrl + '" -Location southcentralus -VmSize Standard_D2s_v5' -ForegroundColor Gray
+    Write-Host ""
+    Write-Host "Más info: https://aka.ms/azureskunotavailable" -ForegroundColor DarkGray
+    exit 1
+}
+
 Write-Host "Abriendo puerto 80 (HTTP)..." -ForegroundColor Cyan
 az vm open-port --resource-group $ResourceGroupName --name $VmName --port 80 --output none
+if ($LASTEXITCODE -ne 0) {
+    Stop-Deploy "No se pudo abrir el puerto 80."
+}
 
 # Swap evita OOM al compilar Maven dentro de Docker en VMs pequeñas
 $bootstrap = @'
@@ -113,18 +139,22 @@ $bootstrap = $bootstrap.Replace("REPO_URL_PLACEHOLDER", $RepoUrl).Replace("JWT_B
 $b64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($bootstrap))
 
 Write-Host "Instalando Docker y construyendo imágenes en la VM (puede tardar 15-45 min la primera vez). No cierres esta ventana." -ForegroundColor Yellow
-Write-Host "Timeout del comando remoto: $RunCommandTimeoutSeconds s" -ForegroundColor Gray
+Write-Host "(Si el comando remoto se corta por tiempo, conecta por SSH y ejecuta: sudo bash /tmp/bootstrap.sh)" -ForegroundColor DarkGray
 
 az vm run-command invoke `
     --resource-group $ResourceGroupName `
     --name $VmName `
     --command-id RunShellScript `
     --scripts "echo $b64 | base64 -d > /tmp/bootstrap.sh && chmod +x /tmp/bootstrap.sh && /tmp/bootstrap.sh" `
-    --timeout-in-seconds $RunCommandTimeoutSeconds `
     -o table
 
 if ($LASTEXITCODE -ne 0) {
-    Write-Warning "El comando remoto devolvió error. Conéctate por SSH y revisa: sudo tail -200 /var/log/peluqueria-bootstrap.log"
+    $ipEarly = az vm list-ip-addresses -g $ResourceGroupName -n $VmName --query "[0].virtualMachine.network.publicIpAddresses[0].ipAddress" -o tsv 2>$null
+    Write-Warning "El comando remoto devolvió error. Revisa la salida de arriba."
+    if ($ipEarly) {
+        Write-Host "Si la VM existe, puedes repetir el despliegue manual por SSH:" -ForegroundColor Yellow
+        Write-Host "  ssh azureuser@$ipEarly `"sudo bash /tmp/bootstrap.sh`"" -ForegroundColor Gray
+    }
 }
 
 $ip = az vm list-ip-addresses -g $ResourceGroupName -n $VmName --query "[0].virtualMachine.network.publicIpAddresses[0].ipAddress" -o tsv
@@ -133,9 +163,14 @@ if (-not $ip) {
 }
 
 Write-Host ""
-Write-Host "=== Listo ===" -ForegroundColor Green
-Write-Host "Frontend + API (mismo sitio, Nginx -> Gateway): http://$ip"
-Write-Host "Credenciales demo: admin@peluqueria.demo / Admin123"
-Write-Host "Comprobar contenedores: ssh azureuser@$ip 'sudo docker compose -f /opt/peluqueria-app/docker-compose.yml ps'"
-Write-Host "Log en la VM: ssh azureuser@$ip 'sudo tail -100 /var/log/peluqueria-bootstrap.log'"
+if ($ip) {
+    Write-Host "=== Listo ===" -ForegroundColor Green
+    Write-Host "Frontend + API (mismo sitio, Nginx -> Gateway): http://$ip"
+    Write-Host "Credenciales demo: admin@peluqueria.demo / Admin123"
+    Write-Host "Comprobar contenedores: ssh azureuser@$ip 'sudo docker compose -f /opt/peluqueria-app/docker-compose.yml ps'"
+    Write-Host "Log en la VM: ssh azureuser@$ip 'sudo tail -100 /var/log/peluqueria-bootstrap.log'"
+} else {
+    Write-Host "No se pudo obtener la IP pública (¿falló la creación de la VM?)." -ForegroundColor Red
+    Write-Host "En Azure Portal revisa el grupo: $ResourceGroupName" -ForegroundColor Yellow
+}
 Write-Host ""
